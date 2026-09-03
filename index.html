@@ -121,6 +121,7 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
   button.primary:hover{filter:brightness(1.06);background:var(--accent)}
   button.small{padding:5px 10px;font-size:13px}
+  button.io[aria-pressed="true"]{background:var(--live);border-color:var(--live);color:#fff;font-weight:600}
 
   /* ---------- notice ---------- */
   .notice{
@@ -271,6 +272,7 @@
     <label><input type="checkbox" id="anydev"> Mostrar todos los dispositivos al buscar</label>
     <button class="small" id="allon" disabled>Encender todos</button>
     <button class="small" id="alloff" disabled>Apagar todos</button>
+    <button class="small" id="diag" disabled>Diagnóstico del hardware</button>
   </div>
 
   <div class="grid" id="grid"></div>
@@ -552,6 +554,7 @@
         disconnectBtn.disabled = false;
         document.getElementById("allon").disabled = false;
         document.getElementById("alloff").disabled = false;
+        document.getElementById("diag").disabled = false;
         SENSORS.forEach(function(s){ cards[s.id].sw.disabled = false; });
         return afterConnect();
       })
@@ -586,8 +589,10 @@
     battPill.hidden = true;
     document.getElementById("allon").disabled = true;
     document.getElementById("alloff").disabled = true;
+    document.getElementById("diag").disabled = true;
     ioChar = null;
-    document.querySelectorAll("button.io").forEach(function(b){ b.disabled = true; });
+    ioMask = 0;
+    document.querySelectorAll("button.io").forEach(function(b){ b.disabled = true; b.setAttribute("aria-pressed","false"); });
     SENSORS.forEach(function(s){
       var c = cards[s.id];
       c.sw.checked = false; c.sw.disabled = true; c.char = null;
@@ -655,12 +660,24 @@
       .catch(function(){ log("Sin servicio de IO."); });
   }
 
+  var ioMask = 0;
+  function paintIO(){
+    document.querySelectorAll("button.io").forEach(function(o){
+      var bit = parseInt(o.getAttribute("data-mask"),10);
+      o.setAttribute("aria-pressed", (bit !== 0 && (ioMask & bit)) ? "true" : "false");
+    });
+  }
   document.querySelectorAll("button.io").forEach(function(b){
     b.addEventListener("click", function(){
       if(!ioChar) return;
-      var mask = parseInt(b.getAttribute("data-mask"),10);
-      ioChar.writeValue(new Uint8Array([mask]))
-        .then(function(){ log("IO ← 0x0" + mask.toString(16)); })
+      var bit = parseInt(b.getAttribute("data-mask"),10);
+      var next = (bit === 0) ? 0 : (ioMask ^ bit);
+      ioChar.writeValue(new Uint8Array([next]))
+        .then(function(){
+          ioMask = next;
+          paintIO();
+          log("IO ← 0x0" + ioMask.toString(16));
+        })
         .catch(function(e){ log("IO error: " + e.message, "err"); });
     });
   });
@@ -717,6 +734,9 @@
         c.sw.checked = false;
         c.sw.disabled = false;
         log(s.name + " — no se pudo activar: " + e.message, "err");
+        if(s.id === "ir"){
+          log("Puede ser que la plaqueta no traiga el TMP007 (TI dejó de montarlo después de junio de 2017) o que falle otra cosa. Corré «Diagnóstico del hardware» para saberlo con certeza.");
+        }
       });
   }
 
@@ -761,6 +781,66 @@
     });
     log("Período nuevo: " + (parseInt(periodSel.value,10)*10) + " ms.");
   });
+
+  /* ---------------- diagnóstico ---------------- */
+  var POST_BITS = [
+    "Temperatura IR (TMP007)",
+    "Humedad (HDC1000)",
+    "Luz (OPT3001)",
+    "Presión (BMP280)",
+    "Movimiento (MPU-9250)",
+    "Magnetómetro",
+    "Memoria flash externa"
+  ];
+
+  document.getElementById("diag").addEventListener("click", function(){
+    if(!server || !server.connected) return;
+    var known = {};
+    SENSORS.forEach(function(s){ known[s.service] = s.name; });
+    known[U("aa64")] = "IO (LEDs y buzzer)";
+
+    log("── Servicios GATT presentes en el firmware ──");
+    server.getPrimaryServices()
+      .then(function(list){
+        list.forEach(function(srv){
+          var u = String(srv.uuid);
+          log("  " + u + (known[u] ? "   ← " + known[u] : ""));
+        });
+        var hasIR = list.some(function(srv){ return String(srv.uuid) === U("aa00"); });
+        log(hasIR
+          ? "El servicio de temperatura IR EXISTE en el firmware."
+          : "El servicio de temperatura IR NO existe en el firmware.", hasIR ? "ok" : "err");
+        return runSelfTest();
+      })
+      .catch(function(e){ log("Diagnóstico: " + e.message, "err"); });
+  });
+
+  function runSelfTest(){
+    log("── Autotest de encendido (POST) ──");
+    var svc;
+    return server.getPrimaryService(U("aa64"))
+      .then(function(s){ svc = s; return s.getCharacteristic(U("aa66")); })
+      .then(function(cfg){ return cfg.writeValue(new Uint8Array([0x02])); })
+      .then(function(){ return new Promise(function(r){ setTimeout(r, 400); }); })
+      .then(function(){ return svc.getCharacteristic(U("aa65")); })
+      .then(function(c){ return c.readValue(); })
+      .then(function(dv){
+        var res = dv.getUint8(0), i;
+        log("Resultado crudo: 0x" + res.toString(16).toUpperCase().padStart(2,"0"));
+        for(i=0;i<POST_BITS.length;i++){
+          var ok = (res >> i) & 1;
+          log("  " + (ok ? "OK   " : "FALLA") + "  " + POST_BITS[i], ok ? "ok" : "err");
+        }
+        if(res === 0x7f) log("Todo el hardware presente y funcionando.", "ok");
+        else if(res === 0x7e) log("Todo OK salvo el TMP007: esta plaqueta no lo trae montado.", "err");
+        ioMask = 0;
+        return svc.getCharacteristic(U("aa66")).then(function(cfg){
+          return cfg.writeValue(new Uint8Array([0x01]));
+        });
+      })
+      .then(function(){ paintIO(); log("Modo remoto restaurado."); })
+      .catch(function(e){ log("Autotest: " + e.message, "err"); });
+  }
 
   document.getElementById("allon").addEventListener("click", function(){
     SENSORS.forEach(function(s,i){
