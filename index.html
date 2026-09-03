@@ -273,6 +273,7 @@
     <button class="small" id="allon" disabled>Encender todos</button>
     <button class="small" id="alloff" disabled>Apagar todos</button>
     <button class="small" id="diag" disabled>Diagnóstico del hardware</button>
+    <button class="small" id="irtest" disabled>Probar TMP007 directo</button>
   </div>
 
   <div class="grid" id="grid"></div>
@@ -286,7 +287,7 @@
   </section>
 
   <footer>
-    Perfil GATT del SensorTag CC2650: UUID base <code>F000xxxx-0451-4000-B000-000000000000</code>. Cada servicio tiene datos, configuración (<code>0x01</code> para encender) y período (unidades de 10&nbsp;ms). El sensor de temperatura IR (TMP007) no viene montado en las plaquetas fabricadas después de junio de 2017.
+    Perfil GATT del SensorTag CC2650: UUID base <code>F000xxxx-0451-4000-B000-000000000000</code>. Cada servicio tiene datos, configuración (<code>0x01</code> para encender) y período (unidades de 10&nbsp;ms). El sensor de temperatura IR (TMP007) dejó de montarse en las plaquetas fabricadas después de junio de 2017; en las anteriores está presente y el autotest distingue un caso del otro.
   </footer>
 </div>
 
@@ -567,6 +568,7 @@
         document.getElementById("allon").disabled = false;
         document.getElementById("alloff").disabled = false;
         document.getElementById("diag").disabled = false;
+        document.getElementById("irtest").disabled = false;
         SENSORS.forEach(function(s){ cards[s.id].sw.disabled = false; });
         return afterConnect();
       })
@@ -605,6 +607,7 @@
     document.getElementById("allon").disabled = true;
     document.getElementById("alloff").disabled = true;
     document.getElementById("diag").disabled = true;
+    document.getElementById("irtest").disabled = true;
     ioChar = null;
     ioMask = 0;
     document.querySelectorAll("button.io").forEach(function(b){ b.disabled = true; b.setAttribute("aria-pressed","false"); });
@@ -876,6 +879,36 @@
     });
   });
 
+  /* Lee el TMP007 salteando el autotest: enciende el sensor, espera una
+     conversión completa y lee los cuatro bytes crudos. Segunda opinión
+     independiente del bit del POST. */
+  document.getElementById("irtest").addEventListener("click", function(){
+    if(!server || !server.connected) return;
+    var svc;
+    log("── Lectura directa del TMP007 ──");
+    server.getPrimaryService(U("aa00"))
+      .then(function(s){ svc = s; return s.getCharacteristic(U("aa02")); })
+      .then(function(cfg){ return cfg.writeValue(new Uint8Array([0x01])); })
+      .then(function(){ log("  config AA02 ← 0x01 aceptada"); })
+      .then(function(){ return new Promise(function(r){ setTimeout(r, 1500); }); })
+      .then(function(){ return svc.getCharacteristic(U("aa01")); })
+      .then(function(c){ return c.readValue(); })
+      .then(function(dv){
+        var hex = [], i;
+        for(i=0;i<dv.byteLength;i++) hex.push(dv.getUint8(i).toString(16).padStart(2,"0"));
+        log("  AA01 crudo: " + hex.join(" "));
+        var obj = (i16(dv,0)>>2)*0.03125, amb = (i16(dv,2)>>2)*0.03125;
+        log("  objeto " + obj.toFixed(2) + " °C · ambiente " + amb.toFixed(2) + " °C");
+        var allZero = hex.every(function(h){ return h === "00"; });
+        if(allZero) log("  Todo en cero: el chip no está entregando datos.", "err");
+        else log("  ¡Hay datos! El TMP007 está vivo.", "ok");
+        return svc.getCharacteristic(U("aa02")).then(function(cfg){
+          return cfg.writeValue(new Uint8Array([0x00]));
+        });
+      })
+      .catch(function(e){ log("  falló en " + e.name + ": " + e.message, "err"); });
+  });
+
   function runSelfTest(){
     log("── Autotest de encendido (POST) ──");
     var svc;
@@ -892,8 +925,18 @@
           var ok = (res >> i) & 1;
           log("  " + (ok ? "OK   " : "FALLA") + "  " + POST_BITS[i], ok ? "ok" : "err");
         }
+        if(!(res & 1) && cards.ir){
+          var ci = cards.ir;
+          ci.sw.checked = false;
+          ci.sw.disabled = true;
+          ci.el.setAttribute("data-sample","0");
+          ci.el.setAttribute("data-live","0");
+          Object.keys(ci.vals).forEach(function(k){ ci.vals[k].textContent = "n/d"; });
+          ci.line.setAttribute("points","");
+          ci.el.querySelector(".uuid").textContent = "TMP007 · el chip no responde";
+        }
         if(res === 0x7f) log("Todo el hardware presente y funcionando.", "ok");
-        else if(res === 0x7e) log("Todo OK salvo el TMP007: el chip no contesta en el bus I2C. O no está montado, o está muerto. Se confirma mirando la plaqueta.", "err");
+        else if(res === 0x7e) log("Todo OK salvo el TMP007: el chip no contesta en el bus I2C. En plaquetas anteriores a junio de 2017 el sensor está montado, así que el problema es del chip o del firmware, no una ausencia.", "err");
         ioMask = 0;
         /* El modo test deja salidas encendidas: volver a remoto y apagarlas. */
         return svc.getCharacteristic(U("aa66"))
