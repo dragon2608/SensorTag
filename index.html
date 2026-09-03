@@ -295,8 +295,18 @@
   "use strict";
 
   var U = function(s){ return "f000" + s + "-0451-4000-b000-000000000000"; };
-  var BATT_SERVICE = 0x180f, BATT_CHAR = 0x2a19;
-  var KEYS_SERVICE = 0xffe0, KEYS_CHAR = 0xffe1;
+  var BATT_SERVICE = "0000180f-0000-1000-8000-00805f9b34fb";
+  var BATT_CHAR    = "00002a19-0000-1000-8000-00805f9b34fb";
+  var KEYS_SERVICE = "0000ffe0-0000-1000-8000-00805f9b34fb";
+  var KEYS_CHAR    = "0000ffe1-0000-1000-8000-00805f9b34fb";
+  var DIS_SERVICE  = "0000180a-0000-1000-8000-00805f9b34fb";
+  var DIS_FIELDS = [
+    ["00002a29-0000-1000-8000-00805f9b34fb","Fabricante"],
+    ["00002a24-0000-1000-8000-00805f9b34fb","Modelo"],
+    ["00002a27-0000-1000-8000-00805f9b34fb","Revisión de hardware"],
+    ["00002a26-0000-1000-8000-00805f9b34fb","Revisión de firmware"],
+    ["00002a28-0000-1000-8000-00805f9b34fb","Revisión de software"]
+  ];
 
   function i16(dv,o){ return dv.getInt16(o,true); }
   function u16(dv,o){ return dv.getUint16(o,true); }
@@ -353,7 +363,7 @@
     {
       id:"mov", name:"Movimiento", chip:"MPU-9250 · F000AA80",
       service:U("aa80"), data:U("aa81"), config:U("aa82"), period:U("aa83"),
-      enable:[0x7f,0x00], minPeriod:10, triple:true,
+      enable:[0x7f,0x00], minPeriod:10, triple:true, accG:2,
       rows:[
         {k:"gyro",l:"Giro",u:"°/s",d:1},
         {k:"acc",l:"Acel",u:"G",d:3},
@@ -363,9 +373,11 @@
       sample:{gyro:[0.4,-1.2,0.1], acc:[0.012,-0.004,1.001], mag:[-18,31,-44], accmag:1.001},
       parse:function(dv){
         var g=[],a=[],m=[],i;
+        var G = this.accG || 2;
         for(i=0;i<3;i++) g.push(i16(dv,i*2)/(65536/500));
-        for(i=0;i<3;i++) a.push(i16(dv,6+i*2)/(32768/2));
-        for(i=0;i<3;i++) m.push(i16(dv,12+i*2)*1.0);
+        for(i=0;i<3;i++) a.push(i16(dv,6+i*2)/(32768/G));
+        /* AK8963: 0.15 µT por cuenta (±4912 µT sobre ±32760) */
+        for(i=0;i<3;i++) m.push(i16(dv,12+i*2)*(4912/32760));
         return { gyro:g, acc:a, mag:m, accmag:Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]) };
       }
     }
@@ -522,7 +534,7 @@
 
   function optionalServices(){
     var list = SENSORS.map(function(s){ return s.service; });
-    list.push(U("aa64"), BATT_SERVICE, KEYS_SERVICE, "device_information");
+    list.push(U("aa64"), BATT_SERVICE, KEYS_SERVICE, DIS_SERVICE);
     return list;
   }
 
@@ -578,7 +590,10 @@
   });
 
   disconnectBtn.addEventListener("click", function(){
-    if(device && device.gatt.connected) device.gatt.disconnect();
+    if(!device || !device.gatt.connected) return;
+    var quiet = ioChar ? ioChar.writeValue(new Uint8Array([0x00])).catch(function(){})
+                       : Promise.resolve();
+    quiet.then(function(){ device.gatt.disconnect(); });
   });
 
   function onDisconnected(){
@@ -601,11 +616,13 @@
     server = null;
   }
 
+  /* Web Bluetooth serializa las operaciones GATT: cada paso espera al anterior
+     y ninguno queda suelto, porque una operación disparada sin await rompe la
+     cola y hace fallar a la siguiente. */
   function afterConnect(){
     return readBattery()
-      .then(subscribeKeys)
-      .then(setupIO)
-      .catch(function(e){ log("Aviso: " + e.message); });
+      .then(function(){ return subscribeKeys(); })
+      .then(function(){ return setupIO(); });
   }
 
   function readBattery(){
@@ -615,49 +632,75 @@
         return c.readValue().then(function(dv){
           battPill.hidden = false;
           battText.textContent = dv.getUint8(0) + " %";
-          log("Batería: " + dv.getUint8(0) + " %");
-          c.startNotifications().then(function(){
+          log("Batería: " + dv.getUint8(0) + " %", "ok");
+          if(!c.properties || !c.properties.notify) return;
+          return c.startNotifications().then(function(){
             c.addEventListener("characteristicvaluechanged", function(ev){
               battText.textContent = ev.target.value.getUint8(0) + " %";
             });
-          }).catch(function(){});
+          });
         });
       })
-      .catch(function(){ log("Sin servicio de batería (firmware viejo)."); });
+      .catch(function(e){ log("Batería: no disponible (" + e.message + ")"); });
   }
 
   function subscribeKeys(){
     return server.getPrimaryService(KEYS_SERVICE)
       .then(function(s){ return s.getCharacteristic(KEYS_CHAR); })
-      .then(function(c){ return c.startNotifications(); })
       .then(function(c){
         c.addEventListener("characteristicvaluechanged", function(ev){
           var b = ev.target.value.getUint8(0);
-          document.getElementById("k0").textContent = (b & 1) ? "pulsado" : "libre";
-          document.getElementById("k1").textContent = (b & 2) ? "pulsado" : "libre";
-          document.getElementById("k2").textContent = (b & 4) ? "cerrado" : "abierto";
+          document.getElementById("k0").textContent = (b & 1) ? "PULSADO" : "libre";
+          document.getElementById("k1").textContent = (b & 2) ? "PULSADO" : "libre";
+          document.getElementById("k2").textContent = (b & 4) ? "CERRADO" : "abierto";
+          log("Botones ← 0x0" + b.toString(16));
         });
+        return c.startNotifications();
+      })
+      .then(function(){
         document.getElementById("k0").textContent = "libre";
         document.getElementById("k1").textContent = "libre";
         document.getElementById("k2").textContent = "abierto";
-        log("Botones y reed switch: notificaciones activas.", "ok");
+        log("Botones y reed: escuchando.", "ok");
       })
-      .catch(function(){ log("Sin servicio de botones."); });
+      .catch(function(e){ log("Botones: FALLÓ — " + e.name + ": " + e.message, "err"); });
   }
 
   function setupIO(){
+    var svc;
     return server.getPrimaryService(U("aa64"))
-      .then(function(s){
-        return s.getCharacteristic(U("aa66"))
-          .then(function(cfg){ return cfg.writeValue(new Uint8Array([0x01])); })
-          .then(function(){ return s.getCharacteristic(U("aa65")); });
-      })
+      .then(function(s){ svc = s; return s.getCharacteristic(U("aa66")); })
+      .then(function(cfg){ return cfg.writeValue(new Uint8Array([0x01])); })
+      .then(function(){ return svc.getCharacteristic(U("aa65")); })
       .then(function(c){
         ioChar = c;
-        document.querySelectorAll("button.io").forEach(function(b){ b.disabled = false; });
-        log("Control remoto de LEDs y buzzer habilitado.", "ok");
+        ioMask = 0;
+        return c.writeValue(new Uint8Array([0x00]));
       })
-      .catch(function(){ log("Sin servicio de IO."); });
+      .then(function(){
+        document.querySelectorAll("button.io").forEach(function(b){ b.disabled = false; });
+        paintIO();
+        log("LEDs y buzzer: control remoto activo.", "ok");
+      })
+      .catch(function(e){ log("LEDs y buzzer: FALLÓ — " + e.name + ": " + e.message, "err"); });
+  }
+
+  function readDeviceInfo(){
+    log("── Identificación del dispositivo ──");
+    return server.getPrimaryService(DIS_SERVICE)
+      .then(function(s){
+        return DIS_FIELDS.reduce(function(chain, f){
+          return chain.then(function(){
+            return s.getCharacteristic(f[0])
+              .then(function(c){ return c.readValue(); })
+              .then(function(dv){
+                log("  " + f[1] + ": " + new TextDecoder().decode(dv).trim());
+              })
+              .catch(function(){});
+          });
+        }, Promise.resolve());
+      })
+      .catch(function(e){ log("  no disponible (" + e.message + ")"); });
   }
 
   var ioMask = 0;
@@ -712,7 +755,18 @@
     server.getPrimaryService(s.service)
       .then(function(srv){
         return srv.getCharacteristic(s.config)
-          .then(function(cfg){ return cfg.writeValue(new Uint8Array(s.enable)); })
+          .then(function(cfg){
+            return cfg.writeValue(new Uint8Array(s.enable)).then(function(){ return cfg; });
+          })
+          .then(function(cfg){
+            if(s.id !== "mov") return;
+            return cfg.readValue().then(function(dv){
+              var raw = dv.byteLength >= 2 ? dv.getUint16(0,true) : dv.getUint8(0);
+              s.accG = [2,4,8,16][(raw >> 8) & 3];
+              log("Movimiento: config leída 0x" + raw.toString(16) +
+                  " → acelerómetro en ±" + s.accG + " G");
+            }).catch(function(){});
+          })
           .then(function(){ return srv.getCharacteristic(s.period); })
           .then(function(per){ return per.writeValue(new Uint8Array([periodTicks(s)])); })
           .catch(function(){ /* algunos firmwares no exponen período */ })
@@ -799,8 +853,9 @@
     SENSORS.forEach(function(s){ known[s.service] = s.name; });
     known[U("aa64")] = "IO (LEDs y buzzer)";
 
+    readDeviceInfo().then(function(){
     log("── Servicios GATT presentes en el firmware ──");
-    server.getPrimaryServices()
+    return server.getPrimaryServices()
       .then(function(list){
         list.forEach(function(srv){
           var u = String(srv.uuid);
@@ -812,7 +867,13 @@
           : "El servicio de temperatura IR NO existe en el firmware.", hasIR ? "ok" : "err");
         return runSelfTest();
       })
+      .then(function(){
+        log("── Reintentando botones, LEDs y buzzer ──");
+        return subscribeKeys();
+      })
+      .then(function(){ return setupIO(); })
       .catch(function(e){ log("Diagnóstico: " + e.message, "err"); });
+    });
   });
 
   function runSelfTest(){
@@ -832,13 +893,19 @@
           log("  " + (ok ? "OK   " : "FALLA") + "  " + POST_BITS[i], ok ? "ok" : "err");
         }
         if(res === 0x7f) log("Todo el hardware presente y funcionando.", "ok");
-        else if(res === 0x7e) log("Todo OK salvo el TMP007: esta plaqueta no lo trae montado.", "err");
+        else if(res === 0x7e) log("Todo OK salvo el TMP007: el chip no contesta en el bus I2C. O no está montado, o está muerto. Se confirma mirando la plaqueta.", "err");
         ioMask = 0;
-        return svc.getCharacteristic(U("aa66")).then(function(cfg){
-          return cfg.writeValue(new Uint8Array([0x01]));
-        });
+        /* El modo test deja salidas encendidas: volver a remoto y apagarlas. */
+        return svc.getCharacteristic(U("aa66"))
+          .then(function(cfg){ return cfg.writeValue(new Uint8Array([0x01])); })
+          .then(function(){ return svc.getCharacteristic(U("aa65")); })
+          .then(function(c){ ioChar = c; return c.writeValue(new Uint8Array([0x00])); });
       })
-      .then(function(){ paintIO(); log("Modo remoto restaurado."); })
+      .then(function(){
+        document.querySelectorAll("button.io").forEach(function(b){ b.disabled = false; });
+        paintIO();
+        log("Modo remoto restaurado, salidas apagadas.", "ok");
+      })
       .catch(function(e){ log("Autotest: " + e.message, "err"); });
   }
 
