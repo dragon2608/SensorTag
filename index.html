@@ -1,0 +1,781 @@
+<title>SensorTag Live</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --bg:#eef0f2;
+    --surface:#ffffff;
+    --surface-2:#f6f7f9;
+    --ink:#14181c;
+    --muted:#5d666f;
+    --faint:#8a939c;
+    --line:#dce0e5;
+    --line-strong:#c3cad1;
+    --accent:#c1291a;
+    --accent-ink:#ffffff;
+    --live:#137a4f;
+    --live-soft:#e2f1ea;
+    --idle-soft:#eceff2;
+    --warn:#8a5a00;
+    --warn-soft:#fdf0d8;
+    --shadow:0 1px 2px rgba(20,24,28,.06), 0 8px 24px -18px rgba(20,24,28,.5);
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0e1114;
+      --surface:#171b1f;
+      --surface-2:#1d2227;
+      --ink:#e6eaee;
+      --muted:#98a2ac;
+      --faint:#6f7a84;
+      --line:#262c32;
+      --line-strong:#39424a;
+      --accent:#ff5b45;
+      --accent-ink:#1a0703;
+      --live:#43c48a;
+      --live-soft:#122c22;
+      --idle-soft:#1d2227;
+      --warn:#e0a640;
+      --warn-soft:#2a2113;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px #000;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1114;
+    --surface:#171b1f;
+    --surface-2:#1d2227;
+    --ink:#e6eaee;
+    --muted:#98a2ac;
+    --faint:#6f7a84;
+    --line:#262c32;
+    --line-strong:#39424a;
+    --accent:#ff5b45;
+    --accent-ink:#1a0703;
+    --live:#43c48a;
+    --live-soft:#122c22;
+    --idle-soft:#1d2227;
+    --warn:#e0a640;
+    --warn-soft:#2a2113;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px #000;
+    color-scheme:dark;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:20px 16px 56px}
+
+  /* ---------- header ---------- */
+  header.bar{
+    display:flex;flex-wrap:wrap;align-items:center;gap:12px;
+    padding:14px 16px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    box-shadow:var(--shadow);
+    position:sticky;top:0;z-index:20;
+  }
+  .brand{display:flex;flex-direction:column;gap:2px;margin-right:auto;min-width:0}
+  .brand h1{
+    margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em;
+    display:flex;align-items:center;gap:9px;
+  }
+  .tagdot{
+    width:11px;height:11px;border-radius:3px;background:var(--accent);
+    flex:none;box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .brand .sub{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:11.5px;color:var(--faint);letter-spacing:.02em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .pill{
+    display:inline-flex;align-items:center;gap:7px;
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:11.5px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;
+    padding:5px 10px;border-radius:999px;
+    background:var(--idle-soft);color:var(--muted);
+    border:1px solid var(--line);
+  }
+  .pill .led{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+  .pill[data-state="on"]{background:var(--live-soft);color:var(--live);border-color:color-mix(in srgb, var(--live) 30%, transparent)}
+  .pill[data-state="on"] .led{background:var(--live);animation:beat 1.6s ease-in-out infinite}
+  .pill[data-state="busy"]{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb, var(--warn) 35%, transparent)}
+  .pill[data-state="busy"] .led{background:var(--warn)}
+  @keyframes beat{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion: reduce){.pill[data-state="on"] .led{animation:none}}
+
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);padding:8px 14px;transition:background .12s, border-color .12s}
+  button:hover{background:var(--bg)}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  button.primary:hover{filter:brightness(1.06);background:var(--accent)}
+  button.small{padding:5px 10px;font-size:13px}
+
+  /* ---------- notice ---------- */
+  .notice{
+    margin-top:14px;padding:14px 16px;border-radius:10px;
+    background:var(--warn-soft);border:1px solid color-mix(in srgb, var(--warn) 32%, transparent);
+    color:var(--ink);
+  }
+  .notice h2{margin:0 0 6px;font-size:14px;font-weight:600;color:var(--warn)}
+  .notice p{margin:0 0 6px;font-size:13.5px;color:var(--muted)}
+  .notice ol{margin:6px 0 0;padding-left:20px;font-size:13.5px;color:var(--muted)}
+  .notice[hidden]{display:none}
+
+  /* ---------- controls row ---------- */
+  .controls{
+    display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+    margin-top:14px;padding:10px 16px;
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);
+  }
+  .controls label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  select{font:inherit;font-size:13px;padding:5px 8px;border-radius:7px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink)}
+  select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+  /* ---------- sensor grid ---------- */
+  .grid{
+    margin-top:16px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:12px;
+  }
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:14px;display:flex;flex-direction:column;gap:12px;
+  }
+  .card[data-live="1"]{border-color:color-mix(in srgb, var(--live) 45%, var(--line))}
+  .card .top{display:flex;align-items:flex-start;gap:10px}
+  .card .id{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+  .card .id .name{font-size:14.5px;font-weight:600;letter-spacing:-.005em}
+  .card .id .uuid{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;font-size:10.5px;
+    color:var(--faint);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  /* toggle */
+  .sw{position:relative;flex:none;width:42px;height:24px}
+  .sw input{position:absolute;inset:0;opacity:0;margin:0;width:100%;height:100%;cursor:pointer}
+  .sw span{
+    position:absolute;inset:0;border-radius:999px;background:var(--idle-soft);
+    border:1px solid var(--line-strong);transition:background .15s,border-color .15s;pointer-events:none;
+  }
+  .sw span::after{
+    content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+    background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s;
+  }
+  .sw input:checked + span{background:var(--live);border-color:var(--live)}
+  .sw input:checked + span::after{transform:translateX(18px)}
+  .sw input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+  .sw input:disabled + span{opacity:.4}
+
+  /* readouts */
+  .reads{display:flex;flex-direction:column;gap:7px}
+  .read{display:flex;align-items:baseline;gap:8px}
+  .read .lbl{
+    font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
+    width:74px;flex:none;
+  }
+  .read .val{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric:tabular-nums;font-size:20px;font-weight:500;letter-spacing:-.02em;
+    margin-left:auto;
+  }
+  .read .unit{font-family:"IBM Plex Mono", ui-monospace, monospace;font-size:11.5px;color:var(--muted);width:34px;flex:none;text-align:right}
+  .card[data-sample="1"] .val,.card[data-sample="1"] .unit{color:var(--faint)}
+
+  .triple{display:grid;grid-template-columns:auto repeat(3,1fr);gap:4px 8px;align-items:baseline}
+  .triple .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
+  .triple .n{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;font-variant-numeric:tabular-nums;
+    font-size:14px;text-align:right;
+  }
+  .card[data-sample="1"] .triple .n{color:var(--faint)}
+
+  .spark{width:100%;height:30px;display:block;overflow:visible}
+  .spark polyline{fill:none;stroke:var(--live);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+  .spark .base{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+  .card[data-sample="1"] .spark polyline{stroke:var(--line-strong)}
+
+  .chip{
+    align-self:flex-start;
+    font-family:"IBM Plex Mono", ui-monospace, monospace;font-size:10px;letter-spacing:.06em;
+    text-transform:uppercase;padding:2px 7px;border-radius:4px;
+    background:var(--idle-soft);color:var(--faint);border:1px solid var(--line);
+  }
+  .card[data-sample="0"] .chip{display:none}
+
+  .btnrow{display:flex;flex-wrap:wrap;gap:8px}
+
+  /* ---------- log ---------- */
+  .logbox{margin-top:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
+  .logbox .head{
+    display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);
+    background:var(--surface-2);
+  }
+  .logbox .head h2{margin:0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-right:auto}
+  #log{
+    margin:0;padding:12px 14px;max-height:210px;overflow:auto;
+    font-family:"IBM Plex Mono", ui-monospace, monospace;font-size:12px;line-height:1.65;
+    color:var(--muted);white-space:pre-wrap;word-break:break-word;
+  }
+  #log b{color:var(--ink);font-weight:500}
+  #log .err{color:var(--accent)}
+  #log .ok{color:var(--live)}
+  #log time{color:var(--faint)}
+
+  footer{margin-top:18px;font-size:12.5px;color:var(--faint);line-height:1.6}
+  footer code{font-family:"IBM Plex Mono", ui-monospace, monospace;font-size:11.5px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">
+      <h1><span class="tagdot" aria-hidden="true"></span> SensorTag Live</h1>
+      <div class="sub" id="devline">CC2650STK / CC1350STK · sin conectar</div>
+    </div>
+    <div class="pill" id="status" data-state="off"><span class="led"></span><span id="statustext">desconectado</span></div>
+    <div class="pill" id="batt" hidden><span class="led" style="background:var(--live)"></span><span id="batttext">— %</span></div>
+    <button class="primary" id="connect">Conectar</button>
+    <button id="disconnect" disabled>Desconectar</button>
+  </header>
+
+  <div class="notice" id="unsupported" hidden>
+    <h2 id="noticetitle">Bluetooth no disponible en este contexto</h2>
+    <p id="noticebody">La página necesita <code>navigator.bluetooth</code>, que solo funciona servida desde su propio dominio por HTTPS, en Chrome de Android o de escritorio. Dentro de un marco incrustado el navegador lo bloquea por política de permisos, y en iOS no existe.</p>
+    <ol>
+      <li>Serví el archivo desde un hosting propio con HTTPS (GitHub Pages, Netlify, Cloudflare Pages, Railway).</li>
+      <li>Abrí esa URL en Chrome, en su propia pestaña.</li>
+      <li>En Android, tené el Bluetooth y la ubicación del sistema activados: Chrome los necesita para escanear.</li>
+    </ol>
+  </div>
+
+  <div class="controls">
+    <label>Frecuencia de muestreo
+      <select id="period">
+        <option value="10">100 ms</option>
+        <option value="30">300 ms</option>
+        <option value="50">500 ms</option>
+        <option value="100" selected>1 s</option>
+        <option value="200">2 s</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="anydev"> Mostrar todos los dispositivos al buscar</label>
+    <button class="small" id="allon" disabled>Encender todos</button>
+    <button class="small" id="alloff" disabled>Apagar todos</button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <section class="logbox">
+    <div class="head">
+      <h2>Registro</h2>
+      <button class="small" id="clearlog">Limpiar</button>
+    </div>
+    <div id="log"></div>
+  </section>
+
+  <footer>
+    Perfil GATT del SensorTag CC2650: UUID base <code>F000xxxx-0451-4000-B000-000000000000</code>. Cada servicio tiene datos, configuración (<code>0x01</code> para encender) y período (unidades de 10&nbsp;ms). El sensor de temperatura IR (TMP007) no viene montado en las plaquetas fabricadas después de junio de 2017.
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var U = function(s){ return "f000" + s + "-0451-4000-b000-000000000000"; };
+  var BATT_SERVICE = 0x180f, BATT_CHAR = 0x2a19;
+  var KEYS_SERVICE = 0xffe0, KEYS_CHAR = 0xffe1;
+
+  function i16(dv,o){ return dv.getInt16(o,true); }
+  function u16(dv,o){ return dv.getUint16(o,true); }
+  function u24(dv,o){ return dv.getUint8(o) | (dv.getUint8(o+1)<<8) | (dv.getUint8(o+2)<<16); }
+
+  var SENSORS = [
+    {
+      id:"ir", name:"Temperatura IR", chip:"TMP007 · F000AA00",
+      service:U("aa00"), data:U("aa01"), config:U("aa02"), period:U("aa03"),
+      enable:[0x01], minPeriod:30,
+      fields:[{k:"obj",l:"Objeto",u:"°C",d:1},{k:"amb",l:"Ambiente",u:"°C",d:1}],
+      spark:"obj",
+      sample:{obj:24.6, amb:25.1},
+      parse:function(dv){
+        return { obj:(i16(dv,0)>>2)*0.03125, amb:(i16(dv,2)>>2)*0.03125 };
+      }
+    },
+    {
+      id:"hum", name:"Humedad", chip:"HDC1000 · F000AA20",
+      service:U("aa20"), data:U("aa21"), config:U("aa22"), period:U("aa23"),
+      enable:[0x01], minPeriod:10,
+      fields:[{k:"rh",l:"Humedad",u:"%RH",d:1},{k:"t",l:"Temp",u:"°C",d:1}],
+      spark:"rh",
+      sample:{rh:53.4, t:25.3},
+      parse:function(dv){
+        var raw = u16(dv,2) & ~0x0003;
+        return { t:(i16(dv,0)/65536)*165-40, rh:(raw/65536)*100 };
+      }
+    },
+    {
+      id:"baro", name:"Presión", chip:"BMP280 · F000AA40",
+      service:U("aa40"), data:U("aa41"), config:U("aa42"), period:U("aa44"),
+      enable:[0x01], minPeriod:10,
+      fields:[{k:"p",l:"Presión",u:"hPa",d:2},{k:"t",l:"Temp",u:"°C",d:2}],
+      spark:"p",
+      sample:{p:1013.25, t:25.42},
+      parse:function(dv){
+        return { t:u24(dv,0)/100, p:u24(dv,3)/100 };
+      }
+    },
+    {
+      id:"opt", name:"Luz", chip:"OPT3001 · F000AA70",
+      service:U("aa70"), data:U("aa71"), config:U("aa72"), period:U("aa73"),
+      enable:[0x01], minPeriod:10,
+      fields:[{k:"lux",l:"Iluminancia",u:"lux",d:1}],
+      spark:"lux",
+      sample:{lux:312.4},
+      parse:function(dv){
+        var raw = u16(dv,0);
+        var m = raw & 0x0fff, e = (raw & 0xf000) >> 12;
+        return { lux: m * 0.01 * Math.pow(2,e) };
+      }
+    },
+    {
+      id:"mov", name:"Movimiento", chip:"MPU-9250 · F000AA80",
+      service:U("aa80"), data:U("aa81"), config:U("aa82"), period:U("aa83"),
+      enable:[0x7f,0x00], minPeriod:10, triple:true,
+      rows:[
+        {k:"gyro",l:"Giro",u:"°/s",d:1},
+        {k:"acc",l:"Acel",u:"G",d:3},
+        {k:"mag",l:"Magn",u:"µT",d:0}
+      ],
+      spark:"accmag",
+      sample:{gyro:[0.4,-1.2,0.1], acc:[0.012,-0.004,1.001], mag:[-18,31,-44], accmag:1.001},
+      parse:function(dv){
+        var g=[],a=[],m=[],i;
+        for(i=0;i<3;i++) g.push(i16(dv,i*2)/(65536/500));
+        for(i=0;i<3;i++) a.push(i16(dv,6+i*2)/(32768/2));
+        for(i=0;i<3;i++) m.push(i16(dv,12+i*2)*1.0);
+        return { gyro:g, acc:a, mag:m, accmag:Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]) };
+      }
+    }
+  ];
+
+  /* ---------------- UI construction ---------------- */
+  var grid = document.getElementById("grid");
+  var cards = {};
+
+  function fmt(v,d){
+    if(v===null||v===undefined||isNaN(v)) return "—";
+    return v.toFixed(d);
+  }
+
+  SENSORS.forEach(function(s){
+    var card = document.createElement("div");
+    card.className = "card";
+    card.setAttribute("data-sample","1");
+    card.setAttribute("data-live","0");
+
+    var top = document.createElement("div");
+    top.className = "top";
+    top.innerHTML =
+      '<div class="id"><div class="name"></div><div class="uuid"></div></div>' +
+      '<label class="sw"><input type="checkbox" disabled><span></span></label>';
+    top.querySelector(".name").textContent = s.name;
+    top.querySelector(".uuid").textContent = s.chip;
+    var sw = top.querySelector("input");
+    sw.setAttribute("aria-label", "Activar " + s.name);
+    card.appendChild(top);
+
+    var reads = document.createElement("div");
+    var valEls = {};
+    if(s.triple){
+      reads.className = "triple";
+      reads.innerHTML = '<div></div><div class="lbl" style="text-align:right">X</div><div class="lbl" style="text-align:right">Y</div><div class="lbl" style="text-align:right">Z</div>';
+      s.rows.forEach(function(r){
+        var lbl = document.createElement("div");
+        lbl.className = "lbl";
+        lbl.textContent = r.l;
+        reads.appendChild(lbl);
+        valEls[r.k] = [];
+        for(var i=0;i<3;i++){
+          var n = document.createElement("div");
+          n.className = "n";
+          n.textContent = fmt(s.sample[r.k][i], r.d);
+          reads.appendChild(n);
+          valEls[r.k].push(n);
+        }
+      });
+    } else {
+      reads.className = "reads";
+      s.fields.forEach(function(f){
+        var row = document.createElement("div");
+        row.className = "read";
+        row.innerHTML = '<div class="lbl"></div><div class="val"></div><div class="unit"></div>';
+        row.querySelector(".lbl").textContent = f.l;
+        row.querySelector(".unit").textContent = f.u;
+        var v = row.querySelector(".val");
+        v.textContent = fmt(s.sample[f.k], f.d);
+        valEls[f.k] = v;
+        reads.appendChild(row);
+      });
+    }
+    card.appendChild(reads);
+
+    var svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+    svg.setAttribute("class","spark");
+    svg.setAttribute("viewBox","0 0 100 30");
+    svg.setAttribute("preserveAspectRatio","none");
+    var base = document.createElementNS("http://www.w3.org/2000/svg","line");
+    base.setAttribute("class","base");
+    base.setAttribute("x1","0"); base.setAttribute("x2","100");
+    base.setAttribute("y1","29.5"); base.setAttribute("y2","29.5");
+    svg.appendChild(base);
+    var line = document.createElementNS("http://www.w3.org/2000/svg","polyline");
+    line.setAttribute("points","0,22 12,18 24,20 36,12 48,15 60,9 72,13 84,7 100,10");
+    svg.appendChild(line);
+    card.appendChild(svg);
+
+    var chip = document.createElement("div");
+    chip.className = "chip";
+    chip.textContent = "datos de ejemplo";
+    card.appendChild(chip);
+
+    grid.appendChild(card);
+    cards[s.id] = { el:card, sw:sw, vals:valEls, line:line, hist:[], char:null, def:s };
+
+    sw.addEventListener("change", function(){
+      toggleSensor(s.id, sw.checked);
+    });
+  });
+
+  /* keys + IO card */
+  var extra = document.createElement("div");
+  extra.className = "card";
+  extra.innerHTML =
+    '<div class="top"><div class="id"><div class="name">Botones y LEDs</div>' +
+    '<div class="uuid">Simple Keys FFE0 · IO F000AA64</div></div></div>' +
+    '<div class="reads">' +
+      '<div class="read"><div class="lbl">Izquierdo</div><div class="val" id="k0">—</div><div class="unit"></div></div>' +
+      '<div class="read"><div class="lbl">Derecho</div><div class="val" id="k1">—</div><div class="unit"></div></div>' +
+      '<div class="read"><div class="lbl">Reed</div><div class="val" id="k2">—</div><div class="unit"></div></div>' +
+    '</div>' +
+    '<div class="btnrow">' +
+      '<button class="small io" data-mask="1" disabled>LED rojo</button>' +
+      '<button class="small io" data-mask="2" disabled>LED verde</button>' +
+      '<button class="small io" data-mask="4" disabled>Buzzer</button>' +
+      '<button class="small io" data-mask="0" disabled>Apagar</button>' +
+    '</div>';
+  grid.appendChild(extra);
+
+  /* ---------------- log ---------------- */
+  var logEl = document.getElementById("log");
+  function log(msg, kind){
+    var t = new Date().toTimeString().slice(0,8);
+    var line = document.createElement("div");
+    var time = document.createElement("time");
+    time.textContent = t + "  ";
+    line.appendChild(time);
+    var span = document.createElement("span");
+    if(kind) span.className = kind;
+    span.textContent = msg;
+    line.appendChild(span);
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  document.getElementById("clearlog").addEventListener("click", function(){ logEl.textContent = ""; });
+
+  /* ---------------- bluetooth ---------------- */
+  var device = null, server = null, ioChar = null;
+  var statusEl = document.getElementById("status");
+  var statusText = document.getElementById("statustext");
+  var devline = document.getElementById("devline");
+  var connectBtn = document.getElementById("connect");
+  var disconnectBtn = document.getElementById("disconnect");
+  var periodSel = document.getElementById("period");
+  var battPill = document.getElementById("batt");
+  var battText = document.getElementById("batttext");
+
+  function setStatus(state, text){
+    statusEl.setAttribute("data-state", state);
+    statusText.textContent = text;
+  }
+
+  var supported = typeof navigator !== "undefined" && !!navigator.bluetooth;
+  if(!supported){
+    document.getElementById("unsupported").hidden = false;
+    connectBtn.disabled = true;
+    log("navigator.bluetooth no está disponible en este contexto.", "err");
+  } else {
+    log("Listo. Encendé el SensorTag (LED verde parpadeando) y tocá Conectar.");
+  }
+
+  function optionalServices(){
+    var list = SENSORS.map(function(s){ return s.service; });
+    list.push(U("aa64"), BATT_SERVICE, KEYS_SERVICE, "device_information");
+    return list;
+  }
+
+  connectBtn.addEventListener("click", function(){
+    var opts = { optionalServices: optionalServices() };
+    if(document.getElementById("anydev").checked){
+      opts.acceptAllDevices = true;
+    } else {
+      opts.filters = [
+        {namePrefix:"CC2650"}, {namePrefix:"CC1350"}, {namePrefix:"CC2540"},
+        {namePrefix:"SensorTag"}, {namePrefix:"TI BLE"}
+      ];
+    }
+    setStatus("busy","buscando");
+    navigator.bluetooth.requestDevice(opts)
+      .then(function(d){
+        device = d;
+        devline.textContent = (d.name || "sin nombre") + " · " + d.id;
+        log("Dispositivo elegido: " + (d.name || "sin nombre"));
+        d.addEventListener("gattserverdisconnected", onDisconnected);
+        setStatus("busy","conectando");
+        return d.gatt.connect();
+      })
+      .then(function(srv){
+        server = srv;
+        log("GATT conectado. Descubriendo servicios…", "ok");
+        setStatus("on","conectado");
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+        document.getElementById("allon").disabled = false;
+        document.getElementById("alloff").disabled = false;
+        SENSORS.forEach(function(s){ cards[s.id].sw.disabled = false; });
+        return afterConnect();
+      })
+      .catch(function(e){
+        setStatus("off","desconectado");
+        var msg = e.message || String(e);
+        if(/permissions policy|disallowed|SecurityError/i.test(msg + " " + e.name)){
+          var box = document.getElementById("unsupported");
+          document.getElementById("noticetitle").textContent = "El marco que muestra esta página bloquea Bluetooth";
+          document.getElementById("noticebody").textContent =
+            "El navegador rechazó requestDevice por política de permisos: la página está incrustada en un marco de otro origen que no habilita bluetooth. No se arregla desde el celular — hay que servir el archivo desde un dominio propio.";
+          box.hidden = false;
+          box.scrollIntoView({behavior:"smooth", block:"center"});
+          log("Bloqueado por política de permisos del marco contenedor.", "err");
+        } else if(e.name === "NotFoundError"){
+          log("No elegiste ningún dispositivo, o no apareció ninguno. Verificá que el LED verde del tag esté parpadeando.", "err");
+        } else {
+          log("Error al conectar: " + msg, "err");
+        }
+      });
+  });
+
+  disconnectBtn.addEventListener("click", function(){
+    if(device && device.gatt.connected) device.gatt.disconnect();
+  });
+
+  function onDisconnected(){
+    setStatus("off","desconectado");
+    log("Dispositivo desconectado.", "err");
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
+    battPill.hidden = true;
+    document.getElementById("allon").disabled = true;
+    document.getElementById("alloff").disabled = true;
+    ioChar = null;
+    document.querySelectorAll("button.io").forEach(function(b){ b.disabled = true; });
+    SENSORS.forEach(function(s){
+      var c = cards[s.id];
+      c.sw.checked = false; c.sw.disabled = true; c.char = null;
+      c.el.setAttribute("data-live","0");
+    });
+    server = null;
+  }
+
+  function afterConnect(){
+    return readBattery()
+      .then(subscribeKeys)
+      .then(setupIO)
+      .catch(function(e){ log("Aviso: " + e.message); });
+  }
+
+  function readBattery(){
+    return server.getPrimaryService(BATT_SERVICE)
+      .then(function(s){ return s.getCharacteristic(BATT_CHAR); })
+      .then(function(c){
+        return c.readValue().then(function(dv){
+          battPill.hidden = false;
+          battText.textContent = dv.getUint8(0) + " %";
+          log("Batería: " + dv.getUint8(0) + " %");
+          c.startNotifications().then(function(){
+            c.addEventListener("characteristicvaluechanged", function(ev){
+              battText.textContent = ev.target.value.getUint8(0) + " %";
+            });
+          }).catch(function(){});
+        });
+      })
+      .catch(function(){ log("Sin servicio de batería (firmware viejo)."); });
+  }
+
+  function subscribeKeys(){
+    return server.getPrimaryService(KEYS_SERVICE)
+      .then(function(s){ return s.getCharacteristic(KEYS_CHAR); })
+      .then(function(c){ return c.startNotifications(); })
+      .then(function(c){
+        c.addEventListener("characteristicvaluechanged", function(ev){
+          var b = ev.target.value.getUint8(0);
+          document.getElementById("k0").textContent = (b & 1) ? "pulsado" : "libre";
+          document.getElementById("k1").textContent = (b & 2) ? "pulsado" : "libre";
+          document.getElementById("k2").textContent = (b & 4) ? "cerrado" : "abierto";
+        });
+        document.getElementById("k0").textContent = "libre";
+        document.getElementById("k1").textContent = "libre";
+        document.getElementById("k2").textContent = "abierto";
+        log("Botones y reed switch: notificaciones activas.", "ok");
+      })
+      .catch(function(){ log("Sin servicio de botones."); });
+  }
+
+  function setupIO(){
+    return server.getPrimaryService(U("aa64"))
+      .then(function(s){
+        return s.getCharacteristic(U("aa66"))
+          .then(function(cfg){ return cfg.writeValue(new Uint8Array([0x01])); })
+          .then(function(){ return s.getCharacteristic(U("aa65")); });
+      })
+      .then(function(c){
+        ioChar = c;
+        document.querySelectorAll("button.io").forEach(function(b){ b.disabled = false; });
+        log("Control remoto de LEDs y buzzer habilitado.", "ok");
+      })
+      .catch(function(){ log("Sin servicio de IO."); });
+  }
+
+  document.querySelectorAll("button.io").forEach(function(b){
+    b.addEventListener("click", function(){
+      if(!ioChar) return;
+      var mask = parseInt(b.getAttribute("data-mask"),10);
+      ioChar.writeValue(new Uint8Array([mask]))
+        .then(function(){ log("IO ← 0x0" + mask.toString(16)); })
+        .catch(function(e){ log("IO error: " + e.message, "err"); });
+    });
+  });
+
+  /* ---------------- sensors ---------------- */
+  function periodTicks(s){
+    var t = parseInt(periodSel.value,10);
+    return Math.max(t, s.minPeriod);
+  }
+
+  function toggleSensor(id, on){
+    var c = cards[id], s = c.def;
+    if(!server || !server.connected){ c.sw.checked = false; return; }
+    c.sw.disabled = true;
+
+    if(!on){
+      var stop = c.char ? c.char.stopNotifications().catch(function(){}) : Promise.resolve();
+      stop.then(function(){
+        return server.getPrimaryService(s.service).then(function(srv){
+          return srv.getCharacteristic(s.config);
+        }).then(function(cfg){
+          return cfg.writeValue(new Uint8Array(s.enable.map(function(){ return 0; })));
+        });
+      }).catch(function(){}).then(function(){
+        c.el.setAttribute("data-live","0");
+        c.sw.disabled = false;
+        log(s.name + ": apagado.");
+      });
+      return;
+    }
+
+    server.getPrimaryService(s.service)
+      .then(function(srv){
+        return srv.getCharacteristic(s.config)
+          .then(function(cfg){ return cfg.writeValue(new Uint8Array(s.enable)); })
+          .then(function(){ return srv.getCharacteristic(s.period); })
+          .then(function(per){ return per.writeValue(new Uint8Array([periodTicks(s)])); })
+          .catch(function(){ /* algunos firmwares no exponen período */ })
+          .then(function(){ return srv.getCharacteristic(s.data); });
+      })
+      .then(function(ch){
+        c.char = ch;
+        ch.addEventListener("characteristicvaluechanged", function(ev){
+          render(s, c, s.parse(ev.target.value));
+        });
+        return ch.startNotifications();
+      })
+      .then(function(){
+        c.el.setAttribute("data-live","1");
+        c.sw.disabled = false;
+        log(s.name + ": notificando cada " + (periodTicks(s)*10) + " ms.", "ok");
+      })
+      .catch(function(e){
+        c.sw.checked = false;
+        c.sw.disabled = false;
+        log(s.name + " — no se pudo activar: " + e.message, "err");
+      });
+  }
+
+  function render(s, c, v){
+    c.el.setAttribute("data-sample","0");
+    if(s.triple){
+      s.rows.forEach(function(r){
+        for(var i=0;i<3;i++) c.vals[r.k][i].textContent = fmt(v[r.k][i], r.d);
+      });
+    } else {
+      s.fields.forEach(function(f){ c.vals[f.k].textContent = fmt(v[f.k], f.d); });
+    }
+    var y = v[s.spark];
+    if(typeof y === "number" && isFinite(y)){
+      c.hist.push(y);
+      if(c.hist.length > 60) c.hist.shift();
+      drawSpark(c);
+    }
+  }
+
+  function drawSpark(c){
+    var h = c.hist;
+    if(h.length < 2){ c.line.setAttribute("points",""); return; }
+    var min = Math.min.apply(null,h), max = Math.max.apply(null,h);
+    var span = (max - min) || 1;
+    var pts = h.map(function(y,i){
+      var x = (i / (h.length - 1)) * 100;
+      var yy = 28 - ((y - min) / span) * 26;
+      return x.toFixed(1) + "," + yy.toFixed(1);
+    });
+    c.line.setAttribute("points", pts.join(" "));
+  }
+
+  periodSel.addEventListener("change", function(){
+    SENSORS.forEach(function(s){
+      var c = cards[s.id];
+      if(!c.sw.checked || !server || !server.connected) return;
+      server.getPrimaryService(s.service)
+        .then(function(srv){ return srv.getCharacteristic(s.period); })
+        .then(function(per){ return per.writeValue(new Uint8Array([periodTicks(s)])); })
+        .catch(function(){});
+    });
+    log("Período nuevo: " + (parseInt(periodSel.value,10)*10) + " ms.");
+  });
+
+  document.getElementById("allon").addEventListener("click", function(){
+    SENSORS.forEach(function(s,i){
+      var c = cards[s.id];
+      if(c.sw.checked) return;
+      setTimeout(function(){ c.sw.checked = true; toggleSensor(s.id, true); }, i*350);
+    });
+  });
+  document.getElementById("alloff").addEventListener("click", function(){
+    SENSORS.forEach(function(s){
+      var c = cards[s.id];
+      if(!c.sw.checked) return;
+      c.sw.checked = false;
+      toggleSensor(s.id, false);
+    });
+  });
+})();
+</script>
